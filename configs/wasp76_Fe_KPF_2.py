@@ -137,7 +137,7 @@ skip_exp = []
 skip_exp = [67,68,69]
 
 start_time = time.time()
-dataset = load_espresso_data('../../../WASP-82/WASP76_testing_data/',
+dataset = load_espresso_data('../../WASP-82/WASP76_testing_data/',
         target='WASP 76',
         skip_exposures=skip_exp,
         TAC=True,
@@ -156,7 +156,7 @@ planet.T0 = t0
 id_info = 'espresso_3000K'
 
 ### LOAD TEMPLATE ###
-temp_dir = '../../../WASP-82/templates/'
+temp_dir = '../../WASP-82/templates/'
 # temp_dir = '../templates/'
 
 start_time=time.time()
@@ -202,7 +202,7 @@ snr_map = make_kp_vsys_map(ccf_map_earth, Kp_list, planet,in_transit=True)
 # Save a copy of the ccf so we can get it back without reruning things
 old_ccf_map_earth_spec=copy.deepcopy(ccf_map_earth.spec)
 
-plot_exposures(ccf_map_earth.spec[:,0,:]*1e6,dataset.spec.reshape(dataset.num_exposures,-1),planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
+plot_exposures(ccf_map_earth.spec[::-1,0,:]*1e6,dataset,planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
 plt.show()
 
 # %%
@@ -213,7 +213,7 @@ hpf = input("Apply a high-pass filter? (y/n)\n")
 if hpf=='y':
     print("High-pass filter applied.")
     ccf_map_earth.spec = old_ccf_map_earth_spec
-    ccf_map_earth.spec=hp_filter(ccf_map_earth.spec[:,0,:],dataset.num_exposures,size=100,plot1D=False)
+    ccf_map_earth.spec=hp_filter(ccf_map_earth.spec[::-1,0,:],dataset.num_exposures,size=100,plot1D=False)
     # plot_exposures(old_ccf_map_earth_spec[:,0,:]*1e6,dataset,planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
     plot_exposures(ccf_map_earth.spec[:,0,:]*1e6,dataset.spec.reshape(dataset.num_exposures,-1),planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
 else:
