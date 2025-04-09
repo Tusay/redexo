@@ -70,6 +70,8 @@ def plot_exposures(data2D,dataset,planet,xextent=None,xlabel=None,separate_trans
     phases = planet.orbital_phase(dataset.obstimes)
     transit_idxs = np.where(np.logical_and(phases>-planet.transit_start, phases<planet.transit_start))[0]
     oot_idxs = [i for i in range(len(phases)) if i not in transit_idxs]
+    oot_pre = [transit_idxs[0]-1 if transit_idxs[0]-1 >= 0 else None][0]
+    oot_post = [transit_idxs[-1]+1 if transit_idxs[-1]+1 <= len(phases)-1 else None][0]
     if xextent is None:
         xextent = data2D[0]
     if line_by_line==True:
@@ -87,7 +89,7 @@ def plot_exposures(data2D,dataset,planet,xextent=None,xlabel=None,separate_trans
         extent0=[xextent[0],xextent[-1],transit_idxs[0],transit_idxs[-1]]
         im1=ax[1].imshow(data2D[transit_idxs],aspect='auto',extent=extent0)
         fig.colorbar(im1)
-        extent1=[xextent[0],xextent[-1],oot_idxs[0],oot_idxs[-1]]
+        extent1=[xextent[0],xextent[-1],[oot_pre if oot_pre!=None else 0][0],[oot_post if oot_post!=None else len(phases)-1][0]]
         im0=ax[0].imshow(data2D[oot_idxs],aspect='auto',extent=extent1)
         fig.colorbar(im0)
         if zoom_in:
@@ -99,7 +101,10 @@ def plot_exposures(data2D,dataset,planet,xextent=None,xlabel=None,separate_trans
         fig,ax = plt.subplots(figsize=(21,int(dataset.num_exposures/4)))
         im=ax.imshow(data2D,aspect='auto',extent=[xextent[0],xextent[-1],0,dataset.num_exposures])
         fig.colorbar(im)
-        ax.axhline(y=oot_idxs[0]+0.5,color='r',linestyle='dashed',label='OoT start')
+        if oot_pre!=None:
+            ax.axhline(y=oot_pre+0.5,color='orange',linestyle='dotted',label='Ingress')
+        if oot_post!=None:
+            ax.axhline(y=oot_post-0.5,color='r',linestyle='dashed',label='Egress')
         if zoom_in:
             plt.xlim(zoom_in[0],zoom_in[1])
         ax.set_xlabel(xlabel)
@@ -212,13 +217,13 @@ plt.show()
 hpf = input("Apply a high-pass filter? (y/n)\n")
 if hpf=='y':
     print("High-pass filter applied.")
-    ccf_map_earth.spec = old_ccf_map_earth_spec
-    ccf_map_earth.spec=hp_filter(ccf_map_earth.spec[::-1,0,:],dataset.num_exposures,size=100,plot1D=False)
+    ccf_map_earth.spec = copy.deepcopy(old_ccf_map_earth_spec)
+    ccf_map_earth.spec = hp_filter(ccf_map_earth.spec[:,0,:],dataset.num_exposures,size=100,plot1D=False)
     # plot_exposures(old_ccf_map_earth_spec[:,0,:]*1e6,dataset,planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
-    plot_exposures(ccf_map_earth.spec[:,0,:]*1e6,dataset.spec.reshape(dataset.num_exposures,-1),planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
+    plot_exposures(ccf_map_earth.spec[::-1,0,:]*1e6,dataset,planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
 else:
     print("No high-pass filter applied.")
-    ccf_map_earth.spec = old_ccf_map_earth_spec
+    ccf_map_earth.spec = copy.deepcopy(old_ccf_map_earth_spec)
 # ccf_map_earth.spec=highpass_filter(ccf_map_earth.spec)
 
 # ccf_map_earth.spec=old_ccf_map_earth_spec
@@ -231,7 +236,7 @@ mask_RM = input("Apply RM mask? Input mask width in km/s or 'n' for no mask:\n")
 if mask_RM!='n' and mask_RM!='':
     print(f"Applying a mask of {mask_RM} km/s")
     # ccf_map_earth.spec = old_ccf_map_earth_spec
-    ccf_stellar = np.copy(ccf_map_earth.spec[:,0,:]*1e6)
+    ccf_stellar = copy.deepcopy(ccf_map_earth.spec[:,0,:]*1e6)
     RM_hw = float(mask_RM)/2
     mask_indices = (ccf_map_earth.rv_grid[0, 0, :] >= -RM_hw) & (ccf_map_earth.rv_grid[0, 0, :] <= RM_hw)
     ccf_stellar[:, mask_indices] = 0
@@ -239,7 +244,7 @@ if mask_RM!='n' and mask_RM!='':
 else:
     print(f"No mask applied.")
     # ccf_map_earth.spec = old_ccf_map_earth_spec
-    ccf_stellar = np.copy(ccf_map_earth.spec[:,0,:]*1e6)
+    ccf_stellar = copy.deepcopy(ccf_map_earth.spec[:,0,:]*1e6)
 
 ### Now shift into the planet frame after masking the RM
 pipeline = Pipeline()
@@ -260,14 +265,14 @@ ccf_1d = pipeline.get_results('1D_CCF')
 
 #Get 1D CCF for first half of transit
 pipeline = Pipeline()
-pipeline.add_module( CoAddExposures(savename='1D_CCF',weights=planet.half_transit(dataset.obstimes,half='1st half')))
+pipeline.add_module( CoAddExposures(savename='1D_CCF',weights=planet.half_transit(dataset.obstimes,core=0.02,half='1st half')))
 pipeline.run(ccf_planet1, num_workers=15, per_order=False)
 pipeline.summary()
 ccf_1d_1 = pipeline.get_results('1D_CCF')
 
 #Get 1D CCF for second half of transit
 pipeline = Pipeline()
-pipeline.add_module( CoAddExposures(savename='1D_CCF', weights=planet.half_transit(dataset.obstimes,half='2nd half')))
+pipeline.add_module( CoAddExposures(savename='1D_CCF', weights=planet.half_transit(dataset.obstimes,core=0.02,half='2nd half')))
 pipeline.run(ccf_planet2, num_workers=15, per_order=False)
 pipeline.summary()
 ccf_1d_2 = pipeline.get_results('1D_CCF')
@@ -333,8 +338,8 @@ ymax = max(ccf_1d.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6
 ax3[1,1].set_ylim([1.1*ymin if ymin<0 else 0.9*ymin][0],[1.1*ymax if ymin>0 else 0.9*ymax][0])
 offset=abs(np.median((ccf_1d.spec[0,0,:]*1e6)[(ccf_1d.spec[0,0,:]*1e6)<np.percentile(ccf_1d.spec[0,0,:]*1e6,50)]))
 coeff, var_matrix = curve_fit(gauss, ccf_map_earth.rv_grid[0,0,:], ccf_1d.spec[0,0,:]*1e6+offset, p0=[max(ccf_1d.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6),0,10])
-coeff1, var_matrix1 = curve_fit(gauss, ccf_map_earth.rv_grid[0,0,:], ccf_1d_1.spec[0,0,:]*1e6+offset, p0=[max(ccf_1d_1.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6),-10,10])
-coeff2, var_matrix2 = curve_fit(gauss, ccf_map_earth.rv_grid[0,0,:], ccf_1d_2.spec[0,0,:]*1e6+offset, p0=[max(ccf_1d_2.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6),-10,10])
+coeff1, var_matrix1 = curve_fit(gauss, ccf_map_earth.rv_grid[0,0,:], ccf_1d_1.spec[0,0,:]*1e6+offset, p0=[max(ccf_1d_1.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6),-10,5])
+coeff2, var_matrix2 = curve_fit(gauss, ccf_map_earth.rv_grid[0,0,:], ccf_1d_2.spec[0,0,:]*1e6+offset, p0=[max(ccf_1d_2.spec[0,0,:][min(xmin_idx,xmax_idx):max(xmin_idx,xmax_idx)]*1e6),-10,5])
 if coeff1[1]<xlimit and coeff1[1]>-xlimit:
     hist_fit1 = gauss(ccf_map_earth.rv_grid[0,0,:], *coeff1)
     ax3[1,1].plot(ccf_map_earth.rv_grid[0,0,:], hist_fit1-offset,color='green')
@@ -371,3 +376,9 @@ if response =='y':
 
     with open(f"../../results/wasp76_{id_info}_fe_ccf_planet.pkl","wb") as f:
         pickle.dump(save_dict,f)
+
+# %%
+dataset.num_exposures
+planet.orbital_phase(ccf_map_earth.obstimes)
+ccf_map_earth.info()
+# %%

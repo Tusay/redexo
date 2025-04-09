@@ -249,11 +249,11 @@ def load_kpf_data(folder,star_name=None,target=None,skip_exposures=[],spectral_o
     return dataset
 
 
-def load_espresso_data(folder,target=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4):
+def load_espresso_data(folder,target=None,planet=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4):
     files = glob.glob(folder+'*_formatted_TAC.fits')
     print('Loading {0} files...'.format(len(files)-len(skip_exposures)))
     files = sorted(files)
-    dataset = Dataset(spec=None,wavelengths=None,errors=None,target=target)
+    dataset = Dataset(spec=None,wavelengths=None,errors=None,target=target,planet=planet)
     dataset.clear_data()
     
     #make master telluric template

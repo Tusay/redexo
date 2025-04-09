@@ -76,13 +76,13 @@ class Planet(object):
             phase = self.orbital_phase(obs_time)
         return np.abs(phase)<self.transit_start
 
-    def half_transit(self, obs_time=None, phase=None, half='1st half'):
+    def half_transit(self, obs_time=None, phase=None, core=0,half='1st half'):
         if phase is None:
             phase = self.orbital_phase(obs_time)
         if half=='1st half':
-            return (phase<0)&(phase>-self.transit_start)
+            return (phase<-abs(core))&(phase>-self.transit_start)
         if half=='2nd half':
-            return (phase>0)&(phase<self.transit_start)
+            return (phase>abs(core))&(phase<self.transit_start)
         else:
             raise ValueError(f"Incorrect syntax for specified transit half: {half}\nPlease select '1st half' or '2nd half'")
 

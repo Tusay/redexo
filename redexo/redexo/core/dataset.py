@@ -4,7 +4,7 @@ import copy
 import matplotlib.pyplot as plt
 
 class Dataset(object):
-    def __init__(self, spec=None, wavelengths=None, errors=None, vbar=[], obstimes=[], exp_num=[], **kwargs):
+    def __init__(self, spec=None, wavelengths=None, errors=None, vbar=[], obstimes=[], exp_num=[], target=None, planet=None, **kwargs):
         '''
         Main dataset class that keeps the spectra
         spec: 
@@ -19,6 +19,8 @@ class Dataset(object):
         self._vbar = vbar
         self._obstimes = obstimes
         self._exp_num = exp_num
+        self.planet = planet    # Add planet reference
+        self.target = target    # Add target name reference
         
         #Also allow for directly assigning spec, wavelengths and errors
         #Make sure that the array always has dimensions (exposures, orders, wavelength)
@@ -49,7 +51,9 @@ class Dataset(object):
 
     @property
     def phases(self):
-        return self.target.orbital_phase(self.obstimes)
+        if self.planet is None:
+            raise AttributeError("Planet object is not set. Cannot calculate phases.")
+        return self.planet.orbital_phase(self.obstimes)
 
     @property
     def transit_indices(self):
@@ -165,8 +169,9 @@ class Dataset(object):
         return fig
 
 class CCF_Dataset(Dataset):
-    def __init__(self, spec=None, rv_grid=None, vbar=[], obstimes=[], **kwargs):
-        super().__init__(spec=spec, wavelengths=rv_grid, vbar=vbar, obstimes=obstimes, **kwargs)
+    def __init__(self, spec=None, rv_grid=None, vbar=[], obstimes=[], planet=None, stellar_ccf=None, **kwargs):
+        super().__init__(spec=spec, wavelengths=rv_grid, vbar=vbar, obstimes=obstimes, planet=planet, **kwargs)
+        self.stellar_ccf = stellar_ccf
 
     @property
     def rv_grid(self):
@@ -188,6 +193,72 @@ class CCF_Dataset(Dataset):
         stds = np.tile(np.nanstd(self.spec[:,:,mask],axis=-1)[:,:,np.newaxis], (1,1,self.spec.shape[-1]))
         self.spec = (self.spec-means)/stds
         return self
+
+    def plot_exposures(self, xextent=None, xlabel='RV [km/s]', separate_transit=False, zoom_in=None, line_by_line=False):
+        if self.planet is None:
+            raise AttributeError("Planet object is not set. Cannot plot exposures.")
+        phases = self.phases  # Use inherited phases property
+        transit_idxs = np.where(np.logical_and(phases>-self.planet.transit_start, phases<self.planet.transit_start))[0]
+        oot_idxs = [i for i in range(len(phases)) if i not in transit_idxs]
+        oot_pre = [transit_idxs[0]-1 if transit_idxs[0]-1 >= 0 else None][0]
+        oot_post = [transit_idxs[-1]+1 if transit_idxs[-1]+1 <= len(phases)-1 else None][0]
+        if xextent is None:
+            xextent = self.rv_grid[0,0,:]
+        if line_by_line==True:
+            for exp in range(self.num_exposures):
+                if len(xextent)<len(self.spec[0,0,:]):
+                    xextent=np.linspace(xextent[0],xextent[-1],len(self.spec[0,0,:]))
+                fig,ax=plt.subplots(figsize=(21,6))
+                plt.plot(xextent,self.spec[:,0,:][exp],label=f'Exp #{exp}')
+                plt.xlabel=xlabel
+                plt.legend()
+                plt.show()
+            return None
+        if separate_transit==True:
+            fig,ax = plt.subplots(nrows=2,figsize=(21,int(self.num_exposures/4)))
+            extent0=[xextent[0],xextent[-1],transit_idxs[0],transit_idxs[-1]]
+            im1=ax[1].imshow(self.spec[:,0,:][transit_idxs],aspect='auto',extent=extent0)
+            fig.colorbar(im1)
+            extent1=[xextent[0],xextent[-1],[oot_pre if oot_pre!=None else 0][0],[oot_post if oot_post!=None else len(phases)-1][0]]
+            im0=ax[0].imshow(self.spec[:,0,:][oot_idxs],aspect='auto',extent=extent1)
+            fig.colorbar(im0)
+            if zoom_in:
+                plt.xlim(zoom_in[0],zoom_in[1])
+            ax[1].set_xlabel(xlabel)
+            ax[0].set_ylabel('Exp. # (OoT)')
+            ax[1].set_ylabel('Exp. # (Transit)')
+        else:
+            fig,ax = plt.subplots(figsize=(21,int(self.num_exposures/4)))
+            im=ax.imshow(self.spec[:,0,:],aspect='auto',extent=[xextent[0],xextent[-1],0,self.num_exposures])
+            fig.colorbar(im)
+            if oot_pre!=None:
+                ax.axhline(y=oot_pre+0.5,color='orange',linestyle='dotted',label='Ingress')
+            if oot_post!=None:
+                ax.axhline(y=oot_post-0.5,color='r',linestyle='dashed',label='Egress')
+            if zoom_in:
+                plt.xlim(zoom_in[0],zoom_in[1])
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel('Exp. #')
+            plt.legend()
+        # plt.show()
+        return fig
+
+    def plot_stellar_rv(self):
+        rv_matrix = np.tile(self.rv_grid, (self.num_exposures, self.num_orders, 1))
+        avg_spec = self.stellar_ccf[:,0,:].mean(axis=0)*1e6
+        hm=(avg_spec.min() + avg_spec.max())/2
+        idx1=(np.abs(avg_spec - hm)).argmin()
+        idx2=(np.abs(np.array(list(avg_spec[:idx1-1])+list(avg_spec[idx1+2:])) - hm)).argmin()
+        fwhm = abs(rv_matrix[0][0][idx1]-rv_matrix[0][0][idx2])
+        fig,ax = plt.subplots(figsize=(21,int(self.num_exposures/4)))
+        im=ax.imshow(self.stellar_ccf[:,0,:]*1e6,aspect='auto',extent=[rv_matrix[0][0][0],rv_matrix[0][0][-1],0,self.num_exposures])
+        fig.colorbar(im)
+        ax.axvline(rv_matrix[0][0][idx1],color='r',linestyle='dashed')
+        ax.axvline(rv_matrix[0][0][idx2],color='r',linestyle='dashed')
+        print(f"FWHM: {fwhm:.1f} km/s")
+        ax.set_xlabel('RV [km/s]')
+        ax.set_ylabel('Exp. #')
+        return fig
 
 '''
     def subtract_model(self,model,optimize=False,exclude_region=None):
