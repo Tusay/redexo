@@ -30,11 +30,11 @@ def sort_by_bjd(files,bjd_header_key,parvi=False):
 
 
 
-def load_carmenes_data(folder, target=None, spectral_orders=None, skip_exposures = [], header_info={}):
+def load_carmenes_data(folder, target=None, planet=None, spectral_orders=None, skip_exposures = [], header_info={}):
     files = glob.glob(folder+'*nir_A.fits')
     print('Loading {0} files...'.format(len(files)-len(skip_exposures)))
     files = sorted(files)
-    dataset = Dataset(target)
+    dataset = Dataset(target,planet=planet)
 
     for i,fname in enumerate(files):
         if not i in skip_exposures:
@@ -56,12 +56,12 @@ def load_carmenes_data(folder, target=None, spectral_orders=None, skip_exposures
             dataset.add_exposure(spectrum, wl=wl, errors=errors, vbar=vbar, obstime=BJD, exp_num=i, **header_data)
     return dataset
 
-def load_maroonx_data(file_path,target=None,spectral_orders=None):
+def load_maroonx_data(file_path,target=None,planet=None,spectral_orders=None):
 
     #This utilizes the HDF format of the reduced spectra
     f = h5py.File(file_path,'r')
     num_files = f['template']['tstack_f'].shape[1]
-    dataset = Dataset(target)
+    dataset = Dataset(target,planet=planet)
 
     for i in range(num_files):
         
@@ -82,7 +82,7 @@ def load_maroonx_data(file_path,target=None,spectral_orders=None):
     return dataset
 
 
-def load_harps_data(folder,target=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4,which_spectrograph='south'):
+def load_harps_data(folder,target=None,planet=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4,which_spectrograph='south'):
     files = glob.glob(folder+'*_formatted_TAC.fits')
     print('Loading {0} files...'.format(len(files)-len(skip_exposures)))
     #files = sorted(files)
@@ -95,7 +95,7 @@ def load_harps_data(folder,target=None,skip_exposures=[],spectral_orders=None,he
     #dataset = Dataset(spec=None,wavelengths=None,errors=None,target=target,header_info=header_info)
     #dataset = Dataset(target=target,header_info=header_info)
     
-    dataset = Dataset(target)
+    dataset = Dataset(target,planet=planet)
     #dataset = Dataset(spec=None,wavelengths=None,errors=None,vbar=[],obstimes=[],header_info=header_info)
     #get the length of the longest array in the data
     lengths = []
@@ -189,7 +189,7 @@ def load_harps_data(folder,target=None,skip_exposures=[],spectral_orders=None,he
     return dataset
 
 
-def load_kpf_data(folder,star_name=None,target=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4):
+def load_kpf_data(folder,star_name=None,target=None,planet=None,skip_exposures=[],spectral_orders=None,header_info={},TAC=True,mask_tellurics=False,cut_off=0.4):
 
     if star_name is None:
         print("Provide a Simbad-resolvable star name")
@@ -198,7 +198,7 @@ def load_kpf_data(folder,star_name=None,target=None,skip_exposures=[],spectral_o
     files = glob.glob(folder+'*formatted_TAC.fits')
     print('Loading {0} files...'.format(len(files)-len(skip_exposures)))
     files = sort_by_bjd(files,'MJD-OBS',parvi=False)
-    dataset = Dataset(spec=None,wavelengths=None,errors=None,target=target)
+    dataset = Dataset(spec=None,wavelengths=None,errors=None,target=target,planet=planet)
 
     #make master telluric template
     if mask_tellurics:
@@ -298,13 +298,13 @@ def load_espresso_data(folder,target=None,planet=None,skip_exposures=[],spectral
     return dataset
 
 
-def load_parvi_data(folder, target=None, spectral_orders=None, skip_exposures = [], normalize=True,header_info={}):
+def load_parvi_data(folder, target=None, planet=None, spectral_orders=None, skip_exposures = [], normalize=True,header_info={}):
     print("Did you remember to change the object name?")
     files = glob.glob(folder+'*.fits')
     print('Loading {0} files...'.format(len(files)-len(skip_exposures)))
     #files = sorted(files)
     files = sort_by_bjd(files,'BARYJD',parvi=True)
-    dataset = Dataset(target)
+    dataset = Dataset(target,planet=planet)
 
     sc = SkyCoord.from_name('HD 189733')
     #sc = SkyCoord.from_name('HD 201033')
