@@ -34,15 +34,8 @@ def gauss(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2*sigma**2))
 
-def human_time(deltat):
-    if deltat>86400:
-        return deltat/86400,"days"
-    elif deltat>3600:
-        return deltat/3600,"hours"
-    elif deltat>60:
-        return deltat/60,"minutes"
-    else:
-        return deltat,"seconds"
+def human_time(delta_time, dec=2):
+    return ", ".join(f"{t} {l}" for t, l in zip([delta_time // 86400, (delta_time % 86400) // 3600, (delta_time % 3600) // 60, round(delta_time % 60, dec)], ["d", "h", "m", "s"]) if t > 0)
 
 def hp_filter(spec,num_exposures,size=100,plot1D=False):
     fixed_spec=[]
@@ -65,53 +58,6 @@ def hp_filter(spec,num_exposures,size=100,plot1D=False):
         plt.plot(x,smoothed)
         plt.show()
     return np.asarray(fixed_spec)[:,np.newaxis,:]
-
-def plot_exposures(data2D,dataset,planet,xextent=None,xlabel=None,separate_transit=False,zoom_in=None,line_by_line=False):
-    phases = planet.orbital_phase(dataset.obstimes)
-    transit_idxs = np.where(np.logical_and(phases>-planet.transit_start, phases<planet.transit_start))[0]
-    oot_idxs = [i for i in range(len(phases)) if i not in transit_idxs]
-    oot_pre = [transit_idxs[0]-1 if transit_idxs[0]-1 >= 0 else None][0]
-    oot_post = [transit_idxs[-1]+1 if transit_idxs[-1]+1 <= len(phases)-1 else None][0]
-    if xextent is None:
-        xextent = data2D[0]
-    if line_by_line==True:
-        for exp in range(dataset.num_exposures):
-            if len(xextent)<len(data2D[0]):
-                xextent=np.linspace(xextent[0],xextent[-1],len(data2D))
-            fig,ax=plt.subplots(figsize=(21,6))
-            plt.plot(xextent,data2D[exp],label=f'Exp #{exp}')
-            plt.xlabel=xlabel
-            plt.legend()
-            plt.show()
-        return None
-    if separate_transit==True:
-        fig,ax = plt.subplots(nrows=2,figsize=(21,int(dataset.num_exposures/4)))
-        extent0=[xextent[0],xextent[-1],transit_idxs[0],transit_idxs[-1]]
-        im1=ax[1].imshow(data2D[transit_idxs],aspect='auto',extent=extent0)
-        fig.colorbar(im1)
-        extent1=[xextent[0],xextent[-1],[oot_pre if oot_pre!=None else 0][0],[oot_post if oot_post!=None else len(phases)-1][0]]
-        im0=ax[0].imshow(data2D[oot_idxs],aspect='auto',extent=extent1)
-        fig.colorbar(im0)
-        if zoom_in:
-            plt.xlim(zoom_in[0],zoom_in[1])
-        ax[1].set_xlabel(xlabel)
-        ax[0].set_ylabel('Exp. # (OoT)')
-        ax[1].set_ylabel('Exp. # (Transit)')
-    else:
-        fig,ax = plt.subplots(figsize=(21,int(dataset.num_exposures/4)))
-        im=ax.imshow(data2D,aspect='auto',extent=[xextent[0],xextent[-1],0,dataset.num_exposures])
-        fig.colorbar(im)
-        if oot_pre!=None:
-            ax.axhline(y=oot_pre+0.5,color='orange',linestyle='dotted',label='Ingress')
-        if oot_post!=None:
-            ax.axhline(y=oot_post-0.5,color='r',linestyle='dashed',label='Egress')
-        if zoom_in:
-            plt.xlim(zoom_in[0],zoom_in[1])
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel('Exp. #')
-        plt.legend()
-    plt.show()
-    return None
 # %%
 #### PLANET AND STELLAR PARAMS #####
 target='wasp76'
@@ -143,7 +89,8 @@ skip_exp = [67,68,69]
 
 start_time = time.time()
 dataset = load_espresso_data('../../WASP-82/WASP76_testing_data/',
-        target='WASP 76',
+        target='WASP-76',
+        planet=planet,
         skip_exposures=skip_exp,
         TAC=True,
         mask_tellurics=True,
@@ -154,9 +101,9 @@ print(f"Data loaded in {end_time:.2f} {end_label}.")
 orbits=int(round(((int(np.median(dataset.obstimes))-int(epoch))/per),0))
 t0=epoch+orbits*per
 planet.T0 = t0
-# dataset.plot_river()
-# plt.show()
 
+dataset.plot_river()
+plt.show()
 
 id_info = 'espresso_3000K'
 
@@ -185,15 +132,18 @@ pipeline.add_module( RemoveHighDeviationPixelsModule(cut_off=2))
 #pipeline.add_module( SubtractMasterTemplateModule(target=planet,phase=t_start)) #builds a master spectral template and divides it out of the data (set subtract_oot to FALSE in cross correlation module)
 pipeline.add_module( CrossCorrelationModule(template = template, template_wl = template_wl, rv_range=150, drv=0.5, error_weighted=False,mask_rm=False,
     rm_mask_range=[-10,10],subtract_oot=True,target=planet,phase=t_start,savename='CCF'))
-pipeline.run(dataset, num_workers=15, per_order=False, plot_stellar_rv=True) 
+pipeline.run(dataset, num_workers=15, per_order=False) 
 pipeline.summary()
 
 ccf_map_earth = pipeline.get_results('CCF')
 
+ccf_map_earth.plot_stellar_rv()
+plt.show()
+
 #rvs = ccf_map_earth.rv_grid[0][0]
 #rv_idx = np.where( (rvs>-10) & (rvs<10) )
 
-phases = planet.orbital_phase(dataset.obstimes)
+phases = dataset.phases
 vmax = np.percentile(ccf_map_earth.spec, 99.8)
 
 #idx=np.where( (phases>t_start) | (phases<-t_start))[0]
@@ -207,7 +157,7 @@ snr_map = make_kp_vsys_map(ccf_map_earth, Kp_list, planet,in_transit=True)
 # Save a copy of the ccf so we can get it back without reruning things
 old_ccf_map_earth_spec=copy.deepcopy(ccf_map_earth.spec)
 
-plot_exposures(ccf_map_earth.spec[::-1,0,:]*1e6,dataset,planet,xextent=ccf_map_earth.rv_grid[0][0],xlabel='RV [km/s]',separate_transit=False)
+ccf_map_earth.plot_exposures(xlabel='RV [km/s]')
 plt.show()
 
 # %%
